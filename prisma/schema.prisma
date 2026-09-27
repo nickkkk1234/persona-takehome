@@ -1,0 +1,97 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Call {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @db.Uuid
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transcript Json      @default("[]")
+  summary    String?
+  startedAt  DateTime  @default(now())
+  endedAt    DateTime?
+
+  @@index([userId, startedAt])
+}
+
+model GoogleConnection {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @db.Uuid
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  googleId     String   @unique
+  email        String
+  scopes       String[]
+  refreshToken String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model Memory {
+  id         String         @id @default(uuid()) @db.Uuid
+  userId     String         @db.Uuid
+  user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind       MemoryKind
+  content    String
+  evidence   MemoryEvidence
+  confidence Float?
+  status     MemoryStatus   @default(ACCEPTED)
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  @@index([userId, status])
+}
+
+model Message {
+  id        String      @id @default(uuid()) @db.Uuid
+  userId    String      @db.Uuid
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      MessageRole
+  content   String
+  createdAt DateTime    @default(now())
+
+  @@index([userId, createdAt])
+}
+
+model User {
+  id        String   @id @default(uuid()) @db.Uuid
+  userName  String?
+  agentName String?
+  email     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  messages          Message[]
+  calls             Call[]
+  memories          Memory[]
+  googleConnections GoogleConnection[]
+}
+
+enum MemoryEvidence {
+  CALL
+  CHAT
+  GOOGLE
+}
+
+enum MemoryKind {
+  GOAL
+  FACT
+  AUTOMATION
+  INSIGHT
+}
+
+enum MemoryStatus {
+  ACCEPTED
+  REJECTED
+}
+
+enum MessageRole {
+  USER
+  AGENT
+}
