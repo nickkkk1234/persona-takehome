@@ -264,6 +264,20 @@ const buildTexts = (email: string, { facts, automations, insight }: Understandin
 const buildCallNotice = (email: string, understanding: Understanding) =>
   `You finished looking through their Google account (${email}). You already told them it's connected, so don't say that again. Share the two or three most interesting things conversationally instead of reading a list, offer to set up the monitoring ideas as tasks, and ask if anything's off. What you found:\n${buildTexts(email, understanding).join("\n")}`
 
+const saveBackfillMemories = async (
+  userId: string,
+  memories: { kind: MemoryKind; content: string; sourceUrl: string | undefined }[],
+) => {
+  try {
+    await saveMemories(
+      userId,
+      memories.map((memory) => ({ ...memory, evidence: MemoryEvidence.GOOGLE })),
+    )
+  } catch (error) {
+    console.error("Backfill found things but could not save them as memories.", error)
+  }
+}
+
 export const backfillGoogleConnection = async (userId: string, connectionId: string) => {
   const connection = await db.googleConnection.findFirst({ where: { id: connectionId, userId } })
   if (!connection) return
@@ -286,10 +300,7 @@ export const backfillGoogleConnection = async (userId: string, connectionId: str
       ...understanding.facts.map((finding) => toMemory(MemoryKind.FACT, finding)),
       ...(understanding.insight ? [toMemory(MemoryKind.INSIGHT, understanding.insight)] : []),
     ]
-    await saveMemories(
-      userId,
-      memories.map((memory) => ({ ...memory, evidence: MemoryEvidence.GOOGLE })),
-    )
+    await saveBackfillMemories(userId, memories)
     await sendUpdateToUser(userId, {
       texts: buildTexts(connection.email, understanding),
       callNotice: buildCallNotice(connection.email, understanding),

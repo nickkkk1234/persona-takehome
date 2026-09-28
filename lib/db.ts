@@ -11,6 +11,8 @@ const createClient = () =>
     adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }),
   });
 
-export const db = globalThis.prisma ?? createClient();
+const cachedClient = globalThis.prisma instanceof PrismaClient ? globalThis.prisma : undefined;
+
+export const db = cachedClient ?? createClient();
 
 if (process.env.NODE_ENV !== "production") globalThis.prisma = db;
