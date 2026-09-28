@@ -71,6 +71,7 @@ export const errorResponseSchema = z.object({
 export const taskFormSchema = z.object({
   title: z.string().trim().min(1).max(120),
   time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+  date: z.iso.date().nullable(),
   days: z.array(z.enum(Weekday)),
   details: z.string().trim().max(1000),
 })

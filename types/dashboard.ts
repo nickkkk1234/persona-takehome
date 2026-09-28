@@ -10,6 +10,7 @@ export type DashboardTask = {
   id: string
   title: string
   time: string
+  date: string | null
   days: Weekday[]
   details: string | null
 }

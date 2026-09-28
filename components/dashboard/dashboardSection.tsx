@@ -1,9 +1,14 @@
 import type { ReactNode } from "react"
 import { Button } from "@/components/ui/button"
 
-export const DashboardSection = ({ title, children }: { title: string; children: ReactNode }) => (
+type DashboardSectionProps = { title: string; action?: ReactNode; children: ReactNode }
+
+export const DashboardSection = ({ title, action, children }: DashboardSectionProps) => (
   <section className="flex flex-col gap-(--space-7)">
-    <h2 className="font-serif text-section text-text-primary">{title}</h2>
+    <div className="flex items-end justify-between">
+      <h2 className="font-serif text-section text-text-primary">{title}</h2>
+      {action}
+    </div>
     <div className="flex flex-col divide-y divide-border-hairline overflow-hidden rounded-lg border border-border-hairline bg-surface">
       {children}
     </div>

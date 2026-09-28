@@ -29,7 +29,7 @@ export const Dashboard = async ({ userId }: { userId: string }) => {
         <Icon className="h-5 text-text-primary sm:h-5" />
       </header>
       <div className="mx-auto flex max-w-2xl flex-col gap-(--space-12) pt-(--space-12)">
-        <AgentHighlight agentName={user.agentName ?? DEFAULT_AGENT_NAME} highlight={user.highlight} />
+        <AgentHighlight agentName={user.agentName ?? DEFAULT_AGENT_NAME} userName={user.userName} highlight={user.highlight} />
         <ProfileSection userName={user.userName} agentName={user.agentName} />
         <ConnectorsSection
           connections={user.googleConnections.map((connection) => ({ id: connection.id, email: connection.email }))}
@@ -39,6 +39,7 @@ export const Dashboard = async ({ userId }: { userId: string }) => {
             id: task.id,
             title: task.title,
             time: task.time,
+            date: task.date,
             days: task.days,
             details: task.details,
           }))}

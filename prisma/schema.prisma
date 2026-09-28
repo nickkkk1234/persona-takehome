@@ -66,6 +66,7 @@ model Task {
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   title     String
   time      String
+  date      String?
   days      Weekday[]
   details   String?
   createdAt DateTime  @default(now())

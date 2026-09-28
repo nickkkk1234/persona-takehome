@@ -1,3 +1,4 @@
+import { format, parseISO } from "date-fns"
 import { Weekday } from "@/lib/generated/prisma/enums"
 import { isPresent } from "@/lib/utils"
 
@@ -56,8 +57,10 @@ export const formatWeekdays = (days: readonly Weekday[]) => {
     .join(", ")
 }
 
-export const formatTaskSchedule = (time: string, days: readonly Weekday[]) =>
-  hasExactly(days, WEEKDAYS) ? `${time} every day` : `${time} on ${formatWeekdays(days)}`
+export const formatTaskSchedule = ({ time, date, days }: { time: string; date: string | null; days: readonly Weekday[] }) => {
+  if (date) return `${time} on ${format(parseISO(date), "MMMM d")}`
+  return hasExactly(days, WEEKDAYS) ? `${time} every day` : `${time} on ${formatWeekdays(days)}`
+}
 
 export const WEEKDAY_INITIALS: Record<Weekday, string> = {
   SUN: "S",

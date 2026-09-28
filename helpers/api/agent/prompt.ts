@@ -4,7 +4,7 @@ import { MemoryKind, MessageRole } from "@/lib/generated/prisma/enums"
 import { isPresent } from "@/lib/utils"
 import { getEnvironment } from "@/helpers/api/environment"
 import { HOME_PATH, GOOGLE_CONNECT_PATH } from "@/helpers/util/routes"
-import { formatWeekdays } from "@/helpers/util/weekday"
+import { formatTaskSchedule } from "@/helpers/util/weekday"
 
 export const DEFAULT_AGENT_NAME = "Persona"
 
@@ -51,7 +51,7 @@ ${formatList(context.rejectedMemories.map((memory) => `- ${memory.content}`), "-
 Tasks (id, name, time, days, details):
 ${formatList(
   context.tasks.map(
-    (task) => `- ${task.id} ${task.title}, ${task.time}, ${formatWeekdays(task.days)}${task.details ? `: ${task.details}` : ""}`,
+    (task) => `- ${task.id} ${task.title}, ${formatTaskSchedule(task)}${task.details ? `: ${task.details}` : ""}`,
   ),
   "- none yet",
 )}
@@ -122,7 +122,8 @@ const GROUND_RULES = `## Ground rules
 - Never expose how you work: no tool or function names, APIs, ids, internal links or technical error text. The Google connect and dashboard links are the only links you share, and they show up as buttons. On a call, never read a link out loud.
 - If a tool fails, say what happened in plain words, like "I couldn't get into your email just now", and suggest a fix, like reconnecting Google.
 - Don't repeat yourself. You can see the texts and earlier calls, so never re-ask or re-explain what's already been covered.
-- Names and email go through update_profile, never into memories. Things you'll do for them go into tasks, not memories.`
+- Names and email go through update_profile, never into memories, including what they want to call you.
+- When they ask you to do something regularly or at a set time, like "order it for me from now on" or "book me a ride for my flight", that's a task: create it with create_task, never save it as a memory. Only say it's set up once the task is created.`
 
 export const buildTextInstructions = (context: AgentContext, timezone: string) => {
   const agentName = getAgentName(context)
@@ -163,7 +164,7 @@ ${GOAL_AND_GOOGLE_RULES}
 
 ## What you can do
 - With Google connected: search their email, read their calendar, and search their Drive files and contacts.
-- Keep recurring tasks for them, like an inbox digest at 08:00 on weekdays. Create, change or delete them when asked.
+- Keep tasks for them, recurring like an inbox digest at 08:00 on weekdays, or one time on a date like a ride to the airport for a flight. Create, change or delete them when asked.
 - Remember things. Save a GOAL when they share something they want help with and a FACT when they tell you about themselves. Save each thing once.
 - When they say something you remember is wrong, forget it with reject_memory right away and confirm in a few words.
 - Their dashboard at ${getDashboardUrl()} shows as a card. Share it when they want to see or manage what you know, their tasks, their name or connected accounts.
@@ -198,7 +199,7 @@ ${GOAL_AND_GOOGLE_RULES}
 If they skip or dodge a step, move on to the next. These are still missing even if they came up on an earlier call, so push for them again now, unless the texts or earlier calls show they said they'd do it later.`
     : "Setup is done. Keep it conversational: ask about their work, their day and what eats their time, and offer to help."
 }
-Save as you go: update_profile for names, save_memory for goals and facts they share.
+Save as you go: update_profile for names, create_task for anything they want you to do regularly or at a set time, save_memory for goals and facts they share.
 
 ## Steering
 - If they interrupt or change the subject, follow them and drop your old point.

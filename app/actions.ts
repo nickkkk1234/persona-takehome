@@ -31,12 +31,21 @@ export const updateProfile = async (field: ProfileField, value: string) => {
   revalidatePath(HOME_PATH)
 }
 
+export const createTask = async (form: TaskForm) => {
+  const userId = await requireSessionUserId()
+  const { title, time, date, days, details } = taskFormSchema.parse(form)
+  await db.task.create({
+    data: { userId, title, time, date, days: date ? [] : sortWeekdays(days), details: details.length > 0 ? details : null },
+  })
+  revalidatePath(HOME_PATH)
+}
+
 export const updateTask = async (taskId: string, form: TaskForm) => {
   const userId = await requireSessionUserId()
-  const { title, time, days, details } = taskFormSchema.parse(form)
+  const { title, time, date, days, details } = taskFormSchema.parse(form)
   await db.task.updateMany({
     where: { id: z.uuid().parse(taskId), userId },
-    data: { title, time, days: sortWeekdays(days), details: details.length > 0 ? details : null },
+    data: { title, time, date, days: date ? [] : sortWeekdays(days), details: details.length > 0 ? details : null },
   })
   revalidatePath(HOME_PATH)
 }

@@ -4,15 +4,17 @@ import { zodTextFormat } from "openai/helpers/zod"
 import type { CallTranscriptEntry } from "@/types/chat"
 import { callTranscriptEntrySchema } from "@/types/schemas"
 import { db } from "@/lib/db"
-import { MemoryEvidence, MemoryKind } from "@/lib/generated/prisma/enums"
+import { MemoryEvidence, MemoryKind, Weekday } from "@/lib/generated/prisma/enums"
 import { loadAgentContext } from "@/helpers/api/agent/context"
 import { buildCallOpening, buildCallSystemPrompt, getDashboardUrl } from "@/helpers/api/agent/prompt"
 import { replyToUser } from "@/helpers/api/agent/textAgent"
+import { executeTool } from "@/helpers/api/agent/tools"
 import { createFishSession, endFishSession, fetchFishSession, toCallId } from "@/helpers/api/fish"
 import { HttpError } from "@/helpers/api/http"
 import { saveMemories } from "@/helpers/api/memory"
 import { saveAgentTexts } from "@/helpers/api/message"
 import { getOpenAI, REASONING_EFFORT, TEXT_MODEL } from "@/helpers/api/openai"
+import { formatTaskSchedule } from "@/helpers/util/weekday"
 
 const callSummarySchema = z.object({
   summary: z
@@ -25,7 +27,20 @@ const callSummarySchema = z.object({
   memories: z
     .array(z.object({ kind: z.enum([MemoryKind.GOAL, MemoryKind.FACT]), content: z.string() }))
     .describe(
-      "Durable goals and facts about their life or work that are not already remembered, in second person. Never names, what they call you, their email, things you promised to do, setup status, or vague plans like connecting an account later; those stay in the summary.",
+      "Durable goals and facts about their life or work that are not already remembered, in second person. Never names, what they call you, their email, things they asked you to do (those are tasks), setup status, or vague plans like connecting an account later; those stay in the summary.",
+    ),
+  tasks: z
+    .array(
+      z.object({
+        title: z.string().describe("Short task name, like Friday Whopper order."),
+        time: z.string().describe("24-hour HH:MM."),
+        days: z.array(z.enum(Weekday)).describe("For a recurring task, the days to run. Empty for a one time task."),
+        date: z.string().nullable().describe("For a one time task, the date in YYYY-MM-DD. Otherwise null."),
+        details: z.string().describe("What should happen when the task runs."),
+      }),
+    )
+    .describe(
+      "Things they asked you to do regularly or at a set time, like \"order my usual every Friday at 7\", that are not already in their tasks. Empty if none.",
     ),
 })
 
@@ -88,7 +103,10 @@ const summarizeCall = async (userId: string, transcript: CallTranscriptEntry[]) 
     instructions: `You summarize a call between a personal assistant ("You") and the user ("Them") so the assistant can pick up later by text or on the next call. Only use what was actually said.
 
 Already remembered, do not repeat:
-${context.acceptedMemories.map((memory) => `- ${memory.content}`).join("\n") || "- nothing yet"}`,
+${context.acceptedMemories.map((memory) => `- ${memory.content}`).join("\n") || "- nothing yet"}
+
+Their tasks, do not repeat:
+${context.tasks.map((task) => `- ${task.title}, ${formatTaskSchedule(task)}`).join("\n") || "- none yet"}`,
     input: formatTranscript(transcript),
     text: { format: zodTextFormat(callSummarySchema, "call_summary") },
   })
@@ -113,6 +131,11 @@ const saveCallUnderstanding = async (userId: string, callId: string, transcript:
   await saveMemories(
     userId,
     summary.memories.map((memory) => ({ kind: memory.kind, content: memory.content, evidence: MemoryEvidence.CALL })),
+  )
+  await Promise.all(
+    summary.tasks.map(({ date, ...task }) =>
+      executeTool({ userId, name: "create_task", rawArguments: { ...task, ...(date ? { date } : {}) }, channel: "call" }),
+    ),
   )
 }
 

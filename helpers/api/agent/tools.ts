@@ -98,7 +98,14 @@ const runTool = async (userId: string, name: ToolName, rawArguments: unknown, ch
     case "create_task": {
       const input = TOOL_DEFINITIONS.create_task.input.parse(rawArguments)
       const task = await db.task.create({
-        data: { userId, title: input.title, time: input.time, days: sortWeekdays(input.days), details: input.details },
+        data: {
+          userId,
+          title: input.title,
+          time: input.time,
+          date: input.date,
+          days: input.date ? [] : sortWeekdays(input.days ?? []),
+          details: input.details,
+        },
       })
       return { result: { taskId: task.id } }
     }
@@ -110,7 +117,8 @@ const runTool = async (userId: string, name: ToolName, rawArguments: unknown, ch
           title: input.title,
           time: input.time,
           details: input.details,
-          ...(input.days ? { days: sortWeekdays(input.days) } : {}),
+          ...(input.date ? { date: input.date, days: [] } : {}),
+          ...(input.days ? { date: null, days: sortWeekdays(input.days) } : {}),
         },
       })
       return count === 0 ? failure("No task with that id.") : { result: { updated: true } }

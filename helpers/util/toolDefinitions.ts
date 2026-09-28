@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { MemoryKind, Weekday } from "@/lib/generated/prisma/enums"
+import { isPresent } from "@/lib/utils"
 import { parseWeekdays } from "@/helpers/util/weekday"
 
 // Imported by the browser and scripts/syncFishAgent.ts, so keep it free of server-only imports.
@@ -13,8 +14,20 @@ const optionalText = z
 const time = z
   .string()
   .trim()
-  .regex(/^([01]?\d|2[0-3]):[0-5]\d$/, "Time must be 24-hour HH:MM, like 07:30.")
-  .transform((value) => value.padStart(5, "0"))
+  .transform((text, context) => {
+    const match = text.match(/^(\d{1,2})(?::([0-5]\d))?\s*(?:([ap])\.?\s*m\.?)?$/i)
+    const hours = Number(match?.[1])
+    const period = match?.[3]?.toLowerCase()
+    const isValid = match && (period ? hours >= 1 && hours <= 12 : hours <= 23 && isPresent(match[2]))
+    if (!isValid) {
+      context.addIssue({ code: "custom", message: "Time must be like 19:00 or 7pm." })
+      return z.NEVER
+    }
+    const hours24 = period ? (hours % 12) + (period === "p" ? 12 : 0) : hours
+    return `${String(hours24).padStart(2, "0")}:${match[2] ?? "00"}`
+  })
+
+const taskDate = z.iso.date("Date must be YYYY-MM-DD, like 2026-10-08.")
 
 const weekdays = z.union([
   z.array(z.enum(Weekday)),
@@ -42,7 +55,7 @@ export const TOOL_DEFINITIONS = {
   },
   save_memory: {
     description:
-      "Remember a durable fact about the user's life or work. GOAL is something they want help with, FACT is a fact about them, INSIGHT is a non-obvious observation. Never save names or email (use update_profile), things you'll do for them (use create_task), setup status, or vague plans like connecting an account later. Don't save duplicates.",
+      "Remember a durable fact about the user's life or work. GOAL is something they want help with, FACT is a fact about them, INSIGHT is a non-obvious observation. Never save names, what they call you or email (use update_profile), things they want you to do regularly or at a set time, or one-off plans like a flight (use create_task), setup status, or vague plans like connecting an account later. Don't save duplicates.",
     input: z.object({
       kind: z.enum(MemoryKind).describe("One of GOAL, FACT, INSIGHT."),
       content: z.string().trim().min(1).max(500).describe("One short sentence, written about the user in second person."),
@@ -57,13 +70,23 @@ export const TOOL_DEFINITIONS = {
   },
   create_task: {
     description:
-      "Create a recurring task you will do for the user at a time of day on given days, like a morning email digest on weekdays.",
-    input: z.object({
-      title: z.string().trim().min(1).max(120).describe("Short task name, like Morning inbox digest."),
-      time: time.describe("Time of day in 24-hour HH:MM, like 08:00."),
-      days: weekdays.describe("Days to run: a list of SUN, MON, TUE, WED, THU, FRI, SAT, or words like weekdays, weekends, daily."),
-      details: optionalText.describe("What should happen when the task runs."),
-    }),
+      "Create a task you will do for the user: recurring on given days, like a morning email digest on weekdays, or one time on a date, like booking a ride to the airport the day of a flight. Use it whenever they ask you to do something regularly or at a set time, like \"order it for me every Friday\".",
+    input: z
+      .object({
+        title: z.string().trim().min(1).max(120).describe("Short task name, like Morning inbox digest."),
+        time: time.describe("Time of day in 24-hour HH:MM, like 08:00."),
+        days: weekdays
+          .optional()
+          .describe(
+            "For a recurring task, the days to run: a list of SUN, MON, TUE, WED, THU, FRI, SAT, or words like weekdays, weekends, daily.",
+          ),
+        date: taskDate.optional().describe("For a one time task, the date in YYYY-MM-DD. Leave out days."),
+        details: optionalText.describe("What should happen when the task runs."),
+      })
+      .refine(
+        (input) => isPresent(input.date) || (input.days ?? []).length > 0,
+        "Pass days for a recurring task or a date for a one time task.",
+      ),
   },
   update_task: {
     description: "Change an existing task. Only pass the fields that change.",
@@ -71,7 +94,8 @@ export const TOOL_DEFINITIONS = {
       task_id: z.uuid().describe("Id of the task to change."),
       title: optionalText.describe("New task name."),
       time: time.optional().describe("New time of day in 24-hour HH:MM."),
-      days: weekdays.optional().describe("New days to run."),
+      days: weekdays.optional().describe("New days to run, which makes it recurring."),
+      date: taskDate.optional().describe("New date in YYYY-MM-DD, which makes it one time."),
       details: optionalText.describe("New description of what should happen."),
     }),
   },

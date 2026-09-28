@@ -5,7 +5,7 @@ import { db } from "@/lib/db"
 import { MemoryStatus, type MemoryEvidence, type MemoryKind } from "@/lib/generated/prisma/enums"
 import { getOpenAI, REASONING_EFFORT, TEXT_MODEL } from "@/helpers/api/openai"
 
-const NAME_PATTERN = /\b(?:name|nickname|call (?:you|me|them|the assistant))\b/i
+const NAME_PATTERN = /\b(?:name|nickname|call (?:you|me|them|(?:the|your|my|their) (?:assistant|agent)))\b/i
 const SETUP_PATTERN =
   /\b(?:connect|connecting|link|linking|hook up)\b.{0,40}\b(?:google|gmail|calendar|drive|account|workspace)\b|\b(?:later|another time|not now|at some point)\b/i
 
