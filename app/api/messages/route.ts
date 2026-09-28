@@ -1,10 +1,12 @@
+import { after } from "next/server"
 import { z } from "zod"
 import { sendMessageBodySchema } from "@/types/schemas"
 import { db } from "@/lib/db"
 import { MessageRole } from "@/lib/generated/prisma/enums"
 import { replyToUser } from "@/helpers/api/agent/textAgent"
+import { refreshHighlightIfStale } from "@/helpers/api/highlight"
 import { parseJsonBody, toErrorResponse } from "@/helpers/api/http"
-import { toChatMessage } from "@/helpers/api/message"
+import { saveAgentTexts, toChatMessage } from "@/helpers/api/message"
 import { requireSessionUserId } from "@/helpers/api/session"
 
 export const GET = async (request: Request) => {
@@ -21,18 +23,27 @@ export const GET = async (request: Request) => {
   }
 }
 
+const saveHighlightAsText = async (userId: string) => {
+  const user = await db.user.findUnique({ where: { id: userId }, select: { highlight: true } })
+  return user?.highlight ? saveAgentTexts(userId, [user.highlight]) : []
+}
+
 export const POST = async (request: Request) => {
   try {
     const userId = await requireSessionUserId()
-    const { content, callId, timezone } = await parseJsonBody(request, sendMessageBodySchema)
+    const { content, callId, quoteHighlight, timezone } = await parseJsonBody(request, sendMessageBodySchema)
+    const quotedHighlight = quoteHighlight ? await saveHighlightAsText(userId) : []
     const userMessage = content
-      ? toChatMessage(await db.message.create({ data: { userId, role: MessageRole.USER, content } }))
+      ? toChatMessage(
+          await db.message.create({ data: { userId, role: MessageRole.USER, content, createdAt: new Date() } }),
+        )
       : undefined
-    const userMessages = userMessage ? [userMessage] : []
+    const userMessages = [...quotedHighlight, ...(userMessage ? [userMessage] : [])]
     if (callId) {
       return Response.json({ messages: userMessages })
     }
     const replies = await replyToUser({ userId, timezone })
+    after(() => refreshHighlightIfStale(userId))
     return Response.json({ messages: [...userMessages, ...replies] })
   } catch (error) {
     return toErrorResponse(error)

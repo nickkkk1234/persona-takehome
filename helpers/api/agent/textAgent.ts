@@ -11,9 +11,10 @@ import type {
 import { MessageRole } from "@/lib/generated/prisma/enums"
 import { isPresent } from "@/lib/utils"
 import { loadAgentContext } from "@/helpers/api/agent/context"
-import { buildTextInstructions } from "@/helpers/api/agent/prompt"
+import { buildTextInstructions, getGoogleConnectUrl, getNextOnboardingStep } from "@/helpers/api/agent/prompt"
 import { TEXT_TOOL_NAMES, TOOL_DEFINITIONS } from "@/helpers/util/toolDefinitions"
 import { executeTool } from "@/helpers/api/agent/tools"
+import { GOOGLE_CONNECT_PATH } from "@/helpers/util/routes"
 import { HttpError } from "@/helpers/api/http"
 import { saveAgentTexts, splitIntoTexts } from "@/helpers/api/message"
 import { getOpenAI, TEXT_MODEL, REASONING_EFFORT } from "@/helpers/api/openai"
@@ -41,6 +42,25 @@ const parseToolArguments = (text: string): unknown => {
   } catch {
     return { unparseableArguments: text }
   }
+}
+
+const RECENT_LINK_WINDOW = 6
+
+const buildGoogleNudge = async (userId: string, replyTexts: string[]) => {
+  const context = await loadAgentContext(userId)
+  const isGoogleNext = getNextOnboardingStep(context, "text")?.id === "google"
+  const hasRecentLink = [
+    ...context.recentMessages
+      .slice(-RECENT_LINK_WINDOW)
+      .filter((message) => message.role === MessageRole.AGENT)
+      .map((message) => message.content),
+    ...replyTexts,
+  ].some((text) => text.includes(GOOGLE_CONNECT_PATH))
+  return isGoogleNext && !hasRecentLink
+    ? [
+        `If you connect your Google account, I can look through your Gmail and calendar and find more I can do for you.\n${getGoogleConnectUrl()}`,
+      ]
+    : []
 }
 
 type TextReplyRequest = {
@@ -96,10 +116,12 @@ export const replyToUser = async ({ userId, timezone, note, canStaySilent = fals
   }
 
   const reply = await runRound(history, 0)
-  if (canStaySilent && reply.trim() === SILENT_REPLY) return []
-  const texts = splitIntoTexts(reply)
-  if (texts.length === 0) {
+  const isSilent = canStaySilent && reply.trim() === SILENT_REPLY
+  const texts = isSilent ? [] : splitIntoTexts(reply)
+  if (!isSilent && texts.length === 0) {
     throw new HttpError("Persona didn't come up with a reply. Try again.", 502)
   }
-  return saveAgentTexts(userId, texts)
+  const nudge = await buildGoogleNudge(userId, texts)
+  const allTexts = [...texts, ...nudge]
+  return allTexts.length > 0 ? saveAgentTexts(userId, allTexts) : []
 }

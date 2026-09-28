@@ -3,7 +3,15 @@ import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 import { db } from "@/lib/db"
 import { backfillGoogleConnection } from "@/helpers/api/google/backfill"
-import { exchangeGoogleCode, fetchGoogleUserInfo, GOOGLE_SCOPES, GOOGLE_STATE_COOKIE } from "@/helpers/api/google/oauth"
+import { z } from "zod"
+import {
+  exchangeGoogleCode,
+  fetchGoogleUserInfo,
+  GOOGLE_RETURN_COOKIE,
+  GOOGLE_RETURN_PATHS,
+  GOOGLE_SCOPES,
+  GOOGLE_STATE_COOKIE,
+} from "@/helpers/api/google/oauth"
 import { sendUpdateToUser } from "@/helpers/api/call"
 import { encryptSecret } from "@/helpers/api/secret"
 import { getSessionUserId } from "@/helpers/api/session"
@@ -11,7 +19,8 @@ import { getSessionUserId } from "@/helpers/api/session"
 const connectGoogleAccount = async (userId: string, code: string) => {
   const token = await exchangeGoogleCode(code)
   const grantedScopes = token.scope.split(" ")
-  if (!GOOGLE_SCOPES.every((scope) => scope === "openid" || scope === "email" || grantedScopes.includes(scope))) {
+  const requiredScopes = GOOGLE_SCOPES.filter((scope) => scope.startsWith("https://"))
+  if (!requiredScopes.every((scope) => grantedScopes.includes(scope))) {
     return
   }
   const profile = await fetchGoogleUserInfo(token.access_token)
@@ -41,7 +50,7 @@ const connectAndNotify = async (userId: string, code: string) => {
     }
     await sendUpdateToUser(userId, {
       texts: [`Connected ${connection.email}. Give me a minute to look around and I'll text you what I find.`],
-      callNotice: `They just connected their Google account (${connection.email}). Tell them it worked and that you'll look around and share what you find in a minute, then keep going with whatever setup is left.`,
+      callNotice: `They just connected their Google account (${connection.email}). Tell them calmly in one short sentence, no exclamations, that it's connected and you're looking through it now. Don't search their accounts yourself, what you found will come to you in a minute. Then keep going with whatever setup is left.`,
     })
     after(() => backfillGoogleConnection(userId, connection.id))
   } catch (error) {
@@ -60,10 +69,12 @@ export const GET = async (request: Request) => {
   const parameters = new URL(request.url).searchParams
   const cookieStore = await cookies()
   const expectedState = cookieStore.get(GOOGLE_STATE_COOKIE)?.value
+  const returnTo = z.enum(GOOGLE_RETURN_PATHS).catch("/chat").parse(cookieStore.get(GOOGLE_RETURN_COOKIE)?.value)
   cookieStore.delete(GOOGLE_STATE_COOKIE)
+  cookieStore.delete(GOOGLE_RETURN_COOKIE)
   const code = parameters.get("code")
-  if (!code || !expectedState || parameters.get("state") !== expectedState) redirect("/chat")
+  if (!code || !expectedState || parameters.get("state") !== expectedState) redirect(returnTo)
 
   await connectAndNotify(userId, code)
-  redirect("/chat")
+  redirect(returnTo)
 }

@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { MessageRole } from "@/lib/generated/prisma/enums"
+import { MessageRole, Weekday } from "@/lib/generated/prisma/enums"
 
 export const chatMessageSchema = z.object({
   id: z.string(),
@@ -15,6 +15,7 @@ export const messagesResponseSchema = z.object({
 export const sendMessageBodySchema = z.object({
   content: z.string().trim().min(1).max(4000).optional(),
   callId: z.uuid().optional(),
+  quoteHighlight: z.boolean().optional(),
   timezone: z.string().min(1).max(64),
 })
 
@@ -66,3 +67,12 @@ export const toolCallResponseSchema = z.object({
 export const errorResponseSchema = z.object({
   error: z.string(),
 })
+
+export const taskFormSchema = z.object({
+  title: z.string().trim().min(1).max(120),
+  time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+  days: z.array(z.enum(Weekday)),
+  details: z.string().trim().max(1000),
+})
+
+export const profileFieldSchema = z.enum(["userName", "agentName"])

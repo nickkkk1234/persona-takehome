@@ -11,7 +11,7 @@ import { getTimezone } from "@/helpers/client/timezone"
 const MESSAGES_URL = "/api/messages"
 const POLL_INTERVAL_MS = 3000
 
-type SendOptions = { callId?: string }
+type SendOptions = { callId?: string; quoteHighlight?: boolean }
 
 const fetchMessages = async () => (await getAndParse(MESSAGES_URL, messagesResponseSchema)).messages
 
@@ -36,13 +36,18 @@ export const useChatMessages = (initialMessages: ChatMessage[], onServerStateCha
     [mutate],
   )
 
-  const postMessage = useCallback(async (content: string | undefined, { callId }: SendOptions) => {
+  const postMessage = useCallback(async (content: string | undefined, { callId, quoteHighlight }: SendOptions) => {
     setIsAwaitingReply(!callId)
     setHasFailedReply(false)
     try {
       const { messages: incoming } = await postAndParse(
         MESSAGES_URL,
-        { timezone: getTimezone(), ...(content ? { content } : {}), ...(callId ? { callId } : {}) },
+        {
+          timezone: getTimezone(),
+          ...(content ? { content } : {}),
+          ...(callId ? { callId } : {}),
+          ...(quoteHighlight ? { quoteHighlight } : {}),
+        },
         messagesResponseSchema,
       )
       return incoming

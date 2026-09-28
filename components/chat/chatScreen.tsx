@@ -11,21 +11,26 @@ import { ChatHeader } from "@/components/chat/chatHeader"
 import { Composer } from "@/components/chat/composer"
 import { MessageList } from "@/components/chat/messageList"
 import { ResetUserButton } from "@/components/chat/resetUserButton"
+import { HomeButton } from "@/components/chat/homeButton"
 import { useCall } from "@/hooks/useCall"
 import { useChatMessages } from "@/hooks/useChatMessages"
+import { useSendInitialDraft } from "@/hooks/useSendInitialDraft"
 
 type ChatScreenProps = {
   initialMessages: ChatMessage[]
+  initialDraft: string | undefined
   agentName: string
   isGoogleConnected: boolean
 }
 
-export const ChatScreen = ({ initialMessages, agentName, isGoogleConnected }: ChatScreenProps) => {
+export const ChatScreen = ({ initialMessages, initialDraft, agentName, isGoogleConnected }: ChatScreenProps) => {
   const router = useRouter()
   const refreshServerState = useCallback(() => router.refresh(), [router])
   const chat = useChatMessages(initialMessages, refreshServerState)
   const call = useCall({ onMessages: chat.addMessages, onToolCompleted: refreshServerState })
   const [isCallExpanded, setIsCallExpanded] = useState(false)
+
+  useSendInitialDraft(initialDraft, chat.send)
 
   const isOnCall = call.status === "active" && call.callId !== undefined
   const latestTextDuringCall = chat.messages.findLast(
@@ -54,6 +59,9 @@ export const ChatScreen = ({ initialMessages, agentName, isGoogleConnected }: Ch
           onStartCall={call.start}
         />
         <div className="relative flex min-h-0 flex-1 flex-col">
+          {!isOnCall && (
+            <HomeButton className="absolute top-(--space-2) right-(--space-5) z-10 h-(--action-height) gap-1 px-(--space-4) has-[>svg]:px-(--space-4) sm:hidden" />
+          )}
           {isOnCall && !isCallExpanded && (
             <CallBar
               agentName={agentName}
@@ -73,7 +81,7 @@ export const ChatScreen = ({ initialMessages, agentName, isGoogleConnected }: Ch
             onRetryReply={chat.retryReply}
           />
         </div>
-        <Composer key={chat.unsentText} initialText={chat.unsentText} onSend={handleSend} />
+        <Composer key={chat.unsentText} initialText={chat.unsentText} placeholder={`Text ${agentName}`} onSend={handleSend} />
         {isOnCall && isCallExpanded && (
           <CallScreen
             agentName={agentName}
@@ -86,7 +94,8 @@ export const ChatScreen = ({ initialMessages, agentName, isGoogleConnected }: Ch
           />
         )}
       </div>
-      <ResetUserButton className="fixed right-(--space-11) bottom-(--space-8) hidden sm:inline-flex" />
+      <HomeButton className="absolute top-(--space-11) right-(--space-12) hidden sm:inline-flex" />
+      <ResetUserButton className="fixed bottom-(--space-8) left-(--space-11) hidden sm:inline-flex" />
     </main>
   )
 }

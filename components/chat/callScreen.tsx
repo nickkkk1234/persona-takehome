@@ -2,7 +2,7 @@ import { ChevronDown, Mic, MicOff, Phone } from "lucide-react"
 import type { ChatMessage } from "@/types/chat"
 import { ContactAvatar } from "@/components/chat/contactAvatar"
 import { Button } from "@/components/ui/button"
-import { formatDuration } from "@/helpers/client/message"
+import { describeTextedMessage, formatDuration } from "@/helpers/client/message"
 import { useElapsedSeconds } from "@/hooks/useElapsedSeconds"
 
 type CallScreenProps = {
@@ -40,7 +40,7 @@ export const CallScreen = ({
             onClick={onMinimize}
             className="cursor-pointer mt-(--space-4) max-w-full truncate rounded-full border border-hairline-warm bg-surface px-(--space-7) py-(--space-2) text-meta text-text-heading"
           >
-            Texted you: {latestText.content}
+            {describeTextedMessage(latestText.content)}
           </button>
         )}
       </div>

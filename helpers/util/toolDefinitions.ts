@@ -37,12 +37,12 @@ export const TOOL_DEFINITIONS = {
     input: z.object({
       user_name: optionalText.describe("The user's first name, as they said it."),
       agent_name: optionalText.describe("The name the user picked for you."),
-      email: z.email().optional().describe("The user's email address, only if they typed or spelled it out."),
+      email: z.email().optional().catch(undefined).describe("The user's email address, only if they typed or spelled it out."),
     }),
   },
   save_memory: {
     description:
-      "Remember something about the user. GOAL is something they want help with, FACT is a fact about them, INSIGHT is a non-obvious observation. Never save names or email (use update_profile) or things you'll do for them (use create_task). Don't save duplicates.",
+      "Remember a durable fact about the user's life or work. GOAL is something they want help with, FACT is a fact about them, INSIGHT is a non-obvious observation. Never save names or email (use update_profile), things you'll do for them (use create_task), setup status, or vague plans like connecting an account later. Don't save duplicates.",
     input: z.object({
       kind: z.enum(MemoryKind).describe("One of GOAL, FACT, INSIGHT."),
       content: z.string().trim().min(1).max(500).describe("One short sentence, written about the user in second person."),

@@ -1,5 +1,6 @@
 import { after } from "next/server"
 import { redirect } from "next/navigation"
+import { z } from "zod"
 import { db } from "@/lib/db"
 import { ChatScreen } from "@/components/chat/chatScreen"
 import { DEFAULT_AGENT_NAME } from "@/helpers/api/agent/prompt"
@@ -7,7 +8,9 @@ import { finalizeAbandonedCalls } from "@/helpers/api/call"
 import { toChatMessage } from "@/helpers/api/message"
 import { getSessionUserId } from "@/helpers/api/session"
 
-const ChatPage = async () => {
+const draftSchema = z.string().trim().min(1).max(4000).optional().catch(undefined)
+
+const ChatPage = async ({ searchParams }: PageProps<"/chat">) => {
   const userId = await getSessionUserId()
   if (!userId) redirect("/")
 
@@ -21,6 +24,7 @@ const ChatPage = async () => {
   return (
     <ChatScreen
       initialMessages={messages.map(toChatMessage)}
+      initialDraft={draftSchema.parse((await searchParams).message)}
       agentName={user?.agentName ?? DEFAULT_AGENT_NAME}
       isGoogleConnected={(user?._count.googleConnections ?? 0) > 0}
     />

@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils"
 export const ResetUserButton = ({ className }: { className?: string }) => (
   <AlertDialog>
     <AlertDialogTrigger asChild>
-      <Button variant="destructive" size="icon" className={cn("size-11 rounded-full", className)} aria-label="Restart">
+      <Button variant="destructive" size="icon" className={cn("size-11 rounded-full bg-transparent", className)} aria-label="Restart">
         <RotateCcw className="size-5" />
       </Button>
     </AlertDialogTrigger>

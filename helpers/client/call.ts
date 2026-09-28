@@ -7,4 +7,4 @@ export const describeCallStartError = (error: unknown) =>
 
 
 export const frameCallNotice = (content: string) =>
-  `(This isn't from them, it's an update for you. ${content})`
+  `(This isn't from them, it's an update for you. ${content} Say it naturally and calmly, without repeating anything you already said.)`

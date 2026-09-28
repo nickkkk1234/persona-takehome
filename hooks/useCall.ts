@@ -11,9 +11,11 @@ import {
 import { CALL_TOOL_NAMES } from "@/helpers/util/toolDefinitions"
 import { getAndParse, postAndParse, postJson } from "@/helpers/client/request"
 import { describeCallStartError, frameCallNotice } from "@/helpers/client/call"
+import { GOOGLE_CONNECT_PATH } from "@/helpers/util/routes"
 import { getTimezone } from "@/helpers/client/timezone"
 
-const NOTICE_POLL_INTERVAL_MS = 3000
+const NOTICE_POLL_INTERVAL_MS = 1500
+const NOTICE_QUIET_MS = 2000
 
 type CallOptions = {
   onMessages: (messages: ChatMessage[]) => void
@@ -37,6 +39,8 @@ export const useCall = ({ onMessages, onToolCompleted }: CallOptions) => {
   const [isWrappingUp, setIsWrappingUp] = useState(false)
   const sessionRef = useRef<AgentSession>(undefined)
   const deliveredNoticesRef = useRef(new Set<string>())
+  const connectCardCallIdRef = useRef<string>(undefined)
+  const lastUserSpeechAtRef = useRef(0)
 
   const resetCall = useCallback(() => {
     sessionRef.current = undefined
@@ -77,6 +81,7 @@ export const useCall = ({ onMessages, onToolCompleted }: CallOptions) => {
               toolCallResponseSchema,
             )
             if (message) onMessages([message])
+            if (message?.content.includes(GOOGLE_CONNECT_PATH)) connectCardCallIdRef.current = activeCallId
             onToolCompleted()
             return result
           },
@@ -93,13 +98,37 @@ export const useCall = ({ onMessages, onToolCompleted }: CallOptions) => {
     }
   }, [])
 
+  const sendConnectCard = useCallback(
+    async (activeCallId: string) => {
+      if (connectCardCallIdRef.current === activeCallId) return
+      connectCardCallIdRef.current = activeCallId
+      try {
+        const { message } = await postAndParse(
+          "/api/tools",
+          { callId: activeCallId, name: "send_text", arguments: { content: GOOGLE_CONNECT_PATH } },
+          toolCallResponseSchema,
+        )
+        if (message) onMessages([message])
+      } catch (error) {
+        console.warn("Could not send the Google connect card.", error)
+      }
+    },
+    [onMessages],
+  )
+
   const connectSession = useCallback(
     (activeCallId: string, sessionToken: SessionToken) =>
       AgentSession.start({
         sessionToken,
         clientTools: buildClientTools(activeCallId),
         callbacks: {
-          onMessage: ({ role, text }) => saveTranscriptEntry(activeCallId, role, text),
+          onUserTranscript: () => {
+            lastUserSpeechAtRef.current = Date.now()
+          },
+          onMessage: async ({ role, text }) => {
+            await saveTranscriptEntry(activeCallId, role, text)
+            if (role === "agent" && text.includes(GOOGLE_CONNECT_PATH)) await sendConnectCard(activeCallId)
+          },
           onDisconnect: async ({ reason }) => {
             resetCall()
             if (reason === "connection_lost") {
@@ -109,7 +138,7 @@ export const useCall = ({ onMessages, onToolCompleted }: CallOptions) => {
           },
         },
       }),
-    [buildClientTools, finalizeCall, resetCall, saveTranscriptEntry],
+    [buildClientTools, finalizeCall, resetCall, saveTranscriptEntry, sendConnectCard],
   )
 
   const start = useCallback(async () => {
@@ -167,22 +196,23 @@ export const useCall = ({ onMessages, onToolCompleted }: CallOptions) => {
     if (status !== "active" || !callId) return
     const deliverNotices = async () => {
       const session = sessionRef.current
-      if (!session) return
+      const isConversationQuiet =
+        session?.mode === "listening" && Date.now() - lastUserSpeechAtRef.current > NOTICE_QUIET_MS
+      if (!session || !isConversationQuiet) return
       try {
         const { notices } = await getAndParse(`/api/calls/${callId}/notices`, callNoticesResponseSchema)
-        notices
-          .filter((notice) => !deliveredNoticesRef.current.has(notice.createdAt))
-          .forEach((notice) => {
-            deliveredNoticesRef.current.add(notice.createdAt)
-            session.sendUserMessage(frameCallNotice(notice.content), { audio: true })
-          })
+        const nextNotice = notices.find((notice) => !deliveredNoticesRef.current.has(notice.createdAt))
+        if (!nextNotice) return
+        deliveredNoticesRef.current.add(nextNotice.createdAt)
+        session.sendUserMessage(frameCallNotice(nextNotice.content), { audio: true })
+        onToolCompleted()
       } catch (error) {
         console.warn("Could not check for call updates.", error)
       }
     }
     const interval = window.setInterval(deliverNotices, NOTICE_POLL_INTERVAL_MS)
     return () => window.clearInterval(interval)
-  }, [callId, status])
+  }, [callId, onToolCompleted, status])
 
   useEffect(
     () => () => {

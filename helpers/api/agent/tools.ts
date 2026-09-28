@@ -5,9 +5,12 @@ import type { GoogleConnection } from "@/lib/generated/prisma/client"
 import { db } from "@/lib/db"
 import { MemoryEvidence, MemoryStatus } from "@/lib/generated/prisma/enums"
 import { CALL_TOOL_NAMES, TEXT_TOOL_NAMES, TOOL_DEFINITIONS } from "@/helpers/util/toolDefinitions"
-import { getGoogleConnectUrl } from "@/helpers/api/agent/prompt"
+import { loadAgentContext } from "@/helpers/api/agent/context"
+import { getGoogleConnectUrl, getNextOnboardingStep } from "@/helpers/api/agent/prompt"
+import { isDurableMemory, saveMemories } from "@/helpers/api/memory"
 import { saveAgentTexts } from "@/helpers/api/message"
 import { searchContacts, searchDrive, searchEmail, listCalendarEvents } from "@/helpers/api/google/workspace"
+import { GOOGLE_CONNECT_PATH } from "@/helpers/util/routes"
 import { sortWeekdays } from "@/helpers/util/weekday"
 
 type ToolRequest = { userId: string; name: string; rawArguments: unknown; channel: ToolChannel }
@@ -49,6 +52,11 @@ const readAllGoogleAccounts = async <Item,>(
   return { result: { results, ...(errors.length > 0 ? { errors } : {}) } }
 }
 
+const describeNextSetupStep = async (userId: string, channel: ToolChannel) => {
+  const nextStep = getNextOnboardingStep(await loadAgentContext(userId), channel)
+  return nextStep ? { nextSetupStep: `Do this in the same reply: ${nextStep.instruction}` } : {}
+}
+
 const runTool = async (userId: string, name: ToolName, rawArguments: unknown, channel: ToolChannel): Promise<ToolOutcome> => {
   switch (name) {
     case "update_profile": {
@@ -57,25 +65,27 @@ const runTool = async (userId: string, name: ToolName, rawArguments: unknown, ch
         where: { id: userId },
         data: { userName: input.user_name, agentName: input.agent_name, email: input.email },
       })
-      return { result: { userName: user.userName, agentName: user.agentName, email: user.email } }
+      return {
+        result: {
+          userName: user.userName,
+          agentName: user.agentName,
+          email: user.email,
+          ...(await describeNextSetupStep(userId, channel)),
+        },
+      }
     }
     case "save_memory": {
       const input = TOOL_DEFINITIONS.save_memory.input.parse(rawArguments)
-      const duplicate = await db.memory.findFirst({
-        where: { userId, content: { equals: input.content, mode: "insensitive" } },
-      })
-      if (duplicate) {
-        return { result: { memoryId: duplicate.id, note: "Already remembered." } }
+      if (!isDurableMemory(input.content)) {
+        return failure("Not saved: names, setup status and vague plans don't belong in memory. Use update_profile for names.")
       }
-      const memory = await db.memory.create({
-        data: {
-          userId,
-          kind: input.kind,
-          content: input.content,
-          evidence: channel === "call" ? MemoryEvidence.CALL : MemoryEvidence.CHAT,
-        },
-      })
-      return { result: { memoryId: memory.id } }
+      const [memory] = await saveMemories(userId, [
+        { kind: input.kind, content: input.content, evidence: channel === "call" ? MemoryEvidence.CALL : MemoryEvidence.CHAT },
+      ])
+      const nextSetupStep = await describeNextSetupStep(userId, channel)
+      return {
+        result: memory ? { memoryId: memory.id, saved: memory.content, ...nextSetupStep } : { note: "Already remembered.", ...nextSetupStep },
+      }
     }
     case "reject_memory": {
       const input = TOOL_DEFINITIONS.reject_memory.input.parse(rawArguments)
@@ -134,7 +144,8 @@ const runTool = async (userId: string, name: ToolName, rawArguments: unknown, ch
     }
     case "send_text": {
       const input = TOOL_DEFINITIONS.send_text.input.parse(rawArguments)
-      const [message] = await saveAgentTexts(userId, [input.content])
+      const content = input.content.includes(GOOGLE_CONNECT_PATH) ? getGoogleConnectUrl() : input.content
+      const [message] = await saveAgentTexts(userId, [content])
       return { result: { sent: true }, ...(message ? { message } : {}) }
     }
     default: {

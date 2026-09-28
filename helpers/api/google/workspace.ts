@@ -5,6 +5,7 @@ import type { GmailPart } from "@/types/google"
 import { fetchGoogleJson } from "@/helpers/api/google/client"
 import { extractEmailBody } from "@/helpers/api/google/emailText"
 import { isPresent } from "@/lib/utils"
+import { executeWithConcurrencyLimit } from "@/helpers/util/promise"
 
 const GMAIL_API = "https://gmail.googleapis.com/gmail/v1/users/me"
 const CALENDAR_API = "https://www.googleapis.com/calendar/v3/calendars/primary/events"
@@ -51,6 +52,7 @@ const eventListSchema = z.object({
         end: z.object({ dateTime: z.string().optional(), date: z.string().optional() }),
         attendees: z.array(z.object({ email: z.string().optional() })).default([]),
         recurringEventId: z.string().optional(),
+        htmlLink: z.string().optional(),
       }),
     )
     .default([]),
@@ -90,10 +92,11 @@ export const searchEmail = async (connection: GoogleConnection, query: string, m
   const listUrl = `${GMAIL_API}/messages?${new URLSearchParams({ q: query, maxResults: String(maxResults) })}`
   const { messages } = await fetchGoogleJson(connection, listUrl, messageListSchema)
   const metadataQuery = "format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date"
-  const details = await Promise.all(
-    messages.map((message) => fetchGoogleJson(connection, `${GMAIL_API}/messages/${message.id}?${metadataQuery}`, messageSchema)),
+  const details = await executeWithConcurrencyLimit(messages, 10, (message) =>
+    fetchGoogleJson(connection, `${GMAIL_API}/messages/${message.id}?${metadataQuery}`, messageSchema),
   )
   return details.map((message) => ({
+    id: message.id,
     account: connection.email,
     from: findHeader(message.payload.headers, "From"),
     to: findHeader(message.payload.headers, "To"),
@@ -141,6 +144,7 @@ export const listCalendarEvents = async (connection: GoogleConnection, from: Dat
     location: event.location,
     attendeeCount: event.attendees.length,
     isRecurring: event.recurringEventId !== undefined,
+    link: event.htmlLink,
   }))
 }
 
@@ -183,6 +187,7 @@ const toContact = (connection: GoogleConnection, person: z.infer<typeof connecti
   emails: person.emailAddresses.map((email) => email.value),
   phones: person.phoneNumbers.map((phone) => phone.value),
   organization: [person.organizations[0]?.title, person.organizations[0]?.name].filter(isPresent).join(", "),
+  company: person.organizations[0]?.name,
 })
 
 export const listContacts = async (connection: GoogleConnection) => {

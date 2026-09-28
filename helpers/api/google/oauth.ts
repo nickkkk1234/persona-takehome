@@ -9,13 +9,17 @@ const GOOGLE_USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo"
 export const GOOGLE_SCOPES = [
   "openid",
   "email",
-  "https://www.googleapis.com/auth/gmail.readonly",
-  "https://www.googleapis.com/auth/calendar.readonly",
+  "profile",
+  "https://www.googleapis.com/auth/gmail.modify",
+  "https://www.googleapis.com/auth/calendar.events",
+  "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
+  "https://www.googleapis.com/auth/drive",
   "https://www.googleapis.com/auth/contacts.readonly",
-  "https://www.googleapis.com/auth/drive.readonly",
 ]
 
 export const GOOGLE_STATE_COOKIE = "google_oauth_state"
+export const GOOGLE_RETURN_COOKIE = "google_oauth_return"
+export const GOOGLE_RETURN_PATHS = ["/chat", "/", "/google/connected"] as const
 
 const tokenResponseSchema = z.object({
   access_token: z.string(),

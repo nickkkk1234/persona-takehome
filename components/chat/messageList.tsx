@@ -2,7 +2,9 @@ import type { ChatMessage } from "@/types/chat"
 import { MessageRole } from "@/lib/generated/prisma/enums"
 import { cn } from "@/lib/utils"
 import { GoogleConnectCard } from "@/components/chat/googleConnectCard"
-import { splitGoogleConnectLink, splitLinks } from "@/helpers/client/message"
+import { DashboardCard } from "@/components/chat/dashboardCard"
+import { splitCardLinks, splitLinks } from "@/helpers/client/message"
+import { HOME_PATH, GOOGLE_CONNECT_PATH } from "@/helpers/util/routes"
 import { useAutoScroll } from "@/hooks/useAutoScroll"
 
 type MessageListProps = {
@@ -38,12 +40,13 @@ const MessageBubble = ({ message, content }: { message: ChatMessage; content: st
 
 const MessageContent = ({ message, isGoogleConnected }: { message: ChatMessage; isGoogleConnected: boolean }) => {
   if (message.role === MessageRole.USER) return <MessageBubble message={message} content={message.content} />
-  const { text, hasGoogleConnectLink } = splitGoogleConnectLink(message.content)
-  if (!hasGoogleConnectLink) return <MessageBubble message={message} content={message.content} />
+  const { text, cardPaths } = splitCardLinks(message.content)
+  if (cardPaths.length === 0) return <MessageBubble message={message} content={message.content} />
   return (
-    <div className="flex w-full flex-col items-start gap-1">
+    <div className="flex w-full flex-col items-start gap-(--space-2)">
       {text.length > 0 && <MessageBubble message={message} content={text} />}
-      <GoogleConnectCard isConnected={isGoogleConnected} />
+      {cardPaths.includes(GOOGLE_CONNECT_PATH) && <GoogleConnectCard isConnected={isGoogleConnected} />}
+      {cardPaths.includes(HOME_PATH) && <DashboardCard />}
     </div>
   )
 }
@@ -77,7 +80,10 @@ export const MessageList = ({
   return (
     <div
       ref={containerRef}
-      className={cn("flex-1 overflow-y-auto px-(--space-5) py-(--space-7)", isBelowCallBar && "pt-20")}
+      className={cn(
+        "flex-1 overflow-y-auto px-(--space-5) py-(--space-7) [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+        isBelowCallBar && "pt-20",
+      )}
     >
       <ol className="flex flex-col">
         {messages.map((message, index) => {

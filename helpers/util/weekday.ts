@@ -56,6 +56,9 @@ export const formatWeekdays = (days: readonly Weekday[]) => {
     .join(", ")
 }
 
+export const formatTaskSchedule = (time: string, days: readonly Weekday[]) =>
+  hasExactly(days, WEEKDAYS) ? `${time} every day` : `${time} on ${formatWeekdays(days)}`
+
 export const WEEKDAY_INITIALS: Record<Weekday, string> = {
   SUN: "S",
   MON: "M",

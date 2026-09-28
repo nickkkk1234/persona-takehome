@@ -6,10 +6,11 @@ import { callTranscriptEntrySchema } from "@/types/schemas"
 import { db } from "@/lib/db"
 import { MemoryEvidence, MemoryKind } from "@/lib/generated/prisma/enums"
 import { loadAgentContext } from "@/helpers/api/agent/context"
-import { buildCallOpening, buildCallSystemPrompt } from "@/helpers/api/agent/prompt"
+import { buildCallOpening, buildCallSystemPrompt, getDashboardUrl } from "@/helpers/api/agent/prompt"
 import { replyToUser } from "@/helpers/api/agent/textAgent"
 import { createFishSession, endFishSession, fetchFishSession, toCallId } from "@/helpers/api/fish"
 import { HttpError } from "@/helpers/api/http"
+import { saveMemories } from "@/helpers/api/memory"
 import { saveAgentTexts } from "@/helpers/api/message"
 import { getOpenAI, REASONING_EFFORT, TEXT_MODEL } from "@/helpers/api/openai"
 
@@ -17,13 +18,14 @@ const callSummarySchema = z.object({
   summary: z
     .string()
     .describe(
-      "Three to six sentences: what was discussed, what they want help with, anything you promised, and exactly where the conversation stopped if it ended mid-topic.",
+      "Three to six sentences: what was discussed, what they want help with, anything you promised, short-term plans like \"they'll connect Gmail later\", and exactly where the conversation stopped if it ended mid-topic.",
     ),
   userName: z.string().nullable().describe("Their first name if they clearly said it, otherwise null."),
+  agentName: z.string().nullable().describe("The name they chose for you if they clearly picked one, otherwise null."),
   memories: z
     .array(z.object({ kind: z.enum([MemoryKind.GOAL, MemoryKind.FACT]), content: z.string() }))
     .describe(
-      "Goals and facts they clearly stated that are not already remembered, in second person. Never names, what they call you, their email, or things you promised to do.",
+      "Durable goals and facts about their life or work that are not already remembered, in second person. Never names, what they call you, their email, things you promised to do, setup status, or vague plans like connecting an account later; those stay in the summary.",
     ),
 })
 
@@ -94,24 +96,32 @@ ${context.acceptedMemories.map((memory) => `- ${memory.content}`).join("\n") || 
   if (!summary) {
     throw new Error("The call summary came back empty.")
   }
-  return { summary, knownUserName: context.user.userName }
+  return { summary, knownUserName: context.user.userName, knownAgentName: context.user.agentName }
 }
 
 const saveCallUnderstanding = async (userId: string, callId: string, transcript: CallTranscriptEntry[]) => {
-  const { summary, knownUserName } = await summarizeCall(userId, transcript)
+  const { summary, knownUserName, knownAgentName } = await summarizeCall(userId, transcript)
   await db.$transaction([
     db.call.update({ where: { id: callId }, data: { summary: summary.summary } }),
     ...(summary.userName && !knownUserName
       ? [db.user.update({ where: { id: userId }, data: { userName: summary.userName } })]
       : []),
-    db.memory.createMany({
-      data: summary.memories.map((memory) => ({
-        userId,
-        kind: memory.kind,
-        content: memory.content,
-        evidence: MemoryEvidence.CALL,
-      })),
-    }),
+    ...(summary.agentName && !knownAgentName
+      ? [db.user.update({ where: { id: userId }, data: { agentName: summary.agentName } })]
+      : []),
+  ])
+  await saveMemories(
+    userId,
+    summary.memories.map((memory) => ({ kind: memory.kind, content: memory.content, evidence: MemoryEvidence.CALL })),
+  )
+}
+
+const introduceDashboardAfterFirstCall = async (userId: string) => {
+  const understoodCallCount = await db.call.count({ where: { userId, summary: { not: null } } })
+  if (understoodCallCount !== 1) return []
+  const user = await db.user.findUnique({ where: { id: userId }, select: { userName: true } })
+  return saveAgentTexts(userId, [
+    `Great chatting${user?.userName ? `, ${user.userName}` : ""}! Check out your dashboard below, it's where you can see what I know about you, your tasks and connected accounts.\n${getDashboardUrl()}`,
   ])
 }
 
@@ -159,10 +169,11 @@ export const finalizeCall = async ({ userId, callId, timezone }: FinalizeRequest
   const followUp = await replyToUser({
     userId,
     timezone,
-    note: `You just got off a call with them; it's the last one under "Earlier calls". Only text if it adds something: what you promised on the call, answers to anything left open, or picking up a topic the call cut off mid-way. No thanks, no recap, no filler like "What can I help with?" or "Ready when you are."`,
+    note: `You just got off a call with them; it's the last one under "Earlier calls". Only text if it adds something: what you promised on the call, answers to anything left open, or picking up a topic the call cut off mid-way. No thanks, no recap, no filler like "What can I help with?" or "Ready when you are." Never repeat anything already said in the texts above, including confirmations, links or questions you've already asked.`,
     canStaySilent: true,
   })
-  return [...fallbackMessages, ...followUp]
+  const dashboardIntroduction = await introduceDashboardAfterFirstCall(userId)
+  return [...fallbackMessages, ...followUp, ...dashboardIntroduction]
 }
 
 type UserUpdate = { texts: string[]; callNotice: string }
