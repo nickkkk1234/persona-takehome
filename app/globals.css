@@ -94,6 +94,19 @@
 
   /* Motion */
   --ease-standard: cubic-bezier(0.32, 0.72, 0, 1);
+
+  --animate-typing: typing 1.2s ease-in-out infinite;
+
+  @keyframes typing {
+    0%,
+    60%,
+    100% {
+      background-color: var(--color-text-placeholder);
+    }
+    30% {
+      background-color: var(--color-text-tertiary);
+    }
+  }
 }
 
 /* Non-Tailwind-namespace tokens, use as p-(--space-4), h-(--control-height), duration-(--duration-fast)... */
